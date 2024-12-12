@@ -1,1 +1,1 @@
-worker: python3 تلي ذاتية.py
+worker: python main.py
