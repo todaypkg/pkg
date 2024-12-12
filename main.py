@@ -1,7 +1,7 @@
 import os
 import platform
 import asyncio
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, sessions
 
 # إعداد الحسابات مع ملفات الجلسات
 accounts = [
@@ -51,17 +51,17 @@ async def main():
 
     # إنشاء العملاء وربط الأحداث
     for account in accounts:
+        session = sessions.StringSession(account['session_data'])  # تحميل الجلسة
         client = TelegramClient(
-            session=f"{account['username']}_session",
+            session=session,
             api_id=account['api_id'],
-            api_hash=account['api_hash'],
-            device_model=account['username']
+            api_hash=account['api_hash']
         )
         
-        # تحميل بيانات الجلسة مباشرة
         await client.connect()
         if not await client.is_user_authorized():
-            await client.import_string(account['session_data'])
+            print(f"الحساب {account['username']} غير مصادق.")
+            continue
 
         username = account['username']
         client.add_event_handler(lambda event, acc=username: handle_message(client, event, acc), events.NewMessage)
