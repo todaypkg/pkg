@@ -3,18 +3,18 @@ import platform
 import asyncio
 from telethon import TelegramClient, events, sessions
 from telethon.errors import SessionPasswordNeededError
-from telethon.tl.types import InputMessagesFilterSelfDestruct
 
 # إعداد المجلد لحفظ الوسائط
 os.makedirs("saved_media", exist_ok=True)
 
-# إعداد معلومات البوت عبر متغيرات البيئة
+# إعداد معلومات البوت من متغيرات البيئة
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID", "0"))  # يتم تعيين القيمة الافتراضية لـ 0 إذا لم يتم تعريف المتغير
+API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 
+# التحقق من وجود المتغيرات
 if not BOT_TOKEN or not API_ID or not API_HASH:
-    raise ValueError("يرجى تحديد القيم الخاصة بـ BOT_TOKEN، API_ID، و API_HASH كمتغيرات بيئة.")
+    raise ValueError("يرجى ضبط متغيرات البيئة BOT_TOKEN, API_ID, و API_HASH في إعدادات التطبيق.")
 
 # قائمة الحسابات
 accounts = []
@@ -67,7 +67,7 @@ async def start_account(api_id, api_hash, phone, session_name):
             await client.sign_in(password=password)
     
     accounts.append(client)
-    client.add_event_handler(lambda event, acc=phone: handle_self_destruct_message(client, event, acc), events.NewMessage(incoming=True, filters=InputMessagesFilterSelfDestruct))
+    client.add_event_handler(lambda event, acc=phone: handle_self_destruct_message(client, event, acc), events.NewMessage(incoming=True))
     await client.start()
     print(f"الحساب {phone} يعمل الآن.")
 
