@@ -1,6 +1,10 @@
-telethon>=1.24.0
-telegraph
-torch
-torchvision
-realesrgan
-Pillow
+telethon==1.29.0
+torch==2.0.1
+torchvision==0.15.2
+realesrgan==0.3.0
+Pillow==10.0.0
+numpy==1.24.2
+opencv-python==4.5.5.64
+tqdm==4.65.0
+scikit-image==0.19.3
+
