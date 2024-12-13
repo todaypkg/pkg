@@ -1,2 +1,6 @@
 telethon>=1.24.0
 telegraph
+torch
+torchvision
+realesrgan
+Pillow
