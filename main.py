@@ -1,98 +1,79 @@
 import os
-import platform
-import asyncio
-from telethon import TelegramClient, events, sessions
-from telethon.errors import SessionPasswordNeededError
+import requests
+from telethon import TelegramClient, events
+from PIL import Image
+from realesrgan import RealESRGAN
 
-# إعداد المجلد لحفظ الوسائط
-os.makedirs("saved_media", exist_ok=True)
+# إعداد معلومات Telegram API
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # ضع توكن البوت الخاص بك هنا
+API_ID = int(os.getenv("API_ID", "0"))  # ضع الـ API ID الخاص بك هنا
+API_HASH = os.getenv("API_HASH")  # ضع الـ API Hash الخاص بك هنا
 
-# إعداد معلومات البوت من متغيرات البيئة
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
+# رابط الأوزان واسم الملف
+WEIGHTS_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.3.0/RealESRGAN_x4plus.pth"
+WEIGHTS_FILE = "weights/RealESRGAN_x4plus.pth"
 
-# التحقق من وجود المتغيرات
-if not BOT_TOKEN or not API_ID or not API_HASH:
-    raise ValueError("يرجى ضبط متغيرات البيئة BOT_TOKEN, API_ID, و API_HASH في إعدادات التطبيق.")
+# التأكد من تحميل الأوزان
+def download_weights():
+    if not os.path.exists(WEIGHTS_FILE):
+        print("Downloading weights...")
+        os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
+        response = requests.get(WEIGHTS_URL, stream=True)
+        with open(WEIGHTS_FILE, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print("Weights downloaded successfully!")
 
-# قائمة الحسابات
-accounts = []
+# تحسين الصورة باستخدام Real-ESRGAN
+def enhance_image(input_image_path, output_image_path):
+    model = RealESRGAN(device="cpu", scale=4)
+    model.load_weights(WEIGHTS_FILE)
 
-# إنشاء البوت
-bot = TelegramClient('bot_session', API_ID, API_HASH)
+    with Image.open(input_image_path) as img:
+        sr_image = model.predict(img)
+        sr_image.save(output_image_path)
 
-# دالة للتعامل مع الرسائل ذاتية التدمير
-async def handle_self_destruct_message(client, event, username):
-    if event.photo:
-        photo = await event.download_media(file="saved_media/")
-        system_info = platform.system()
-        node_name = platform.node()
+# بدء تشغيل البوت
+bot = TelegramClient("bot_session", API_ID, API_HASH)
 
-        custom_message = f"\U0001F496 {username} جابلك صورة حب ذاتية التدمير! \U0001F496\n"
-        custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
+@bot.on(events.NewMessage(pattern="/start"))
+async def start(event):
+    await event.respond("أهلاً بك! أرسل لي صورة وسأقوم بتحسينها باستخدام الذكاء الاصطناعي 🚀.")
 
-        await client.send_message('me', custom_message)
-        await client.send_file('me', photo, caption="\U0001F4E3 تم التقاط صورة ذاتية التدمير!")
-    elif event.video:
-        video = await event.download_media(file="saved_media/")
-        system_info = platform.system()
-        node_name = platform.node()
+@bot.on(events.NewMessage(incoming=True, func=lambda e: e.photo))
+async def handle_image(event):
+    sender = await event.get_sender()
+    await event.reply("جارٍ معالجة الصورة، يرجى الانتظار... ⏳")
 
-        custom_message = f"\U0001F4F9 {username} جابلك فيديو حب ذاتي التدمير! \U0001F4F9\n"
-        custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
+    # تنزيل الصورة
+    input_image_path = await event.download_media(file="input_image.jpg")
+    output_image_path = "output_image.jpg"
 
-        await client.send_message('me', custom_message)
-        await client.send_file('me', video, caption="\U0001F4E3 تم التقاط فيديو ذاتي التدمير!")
+    try:
+        # تحسين الصورة
+        enhance_image(input_image_path, output_image_path)
 
-# بدء تشغيل الحساب الجديد
-async def start_account(api_id, api_hash, phone, session_name):
-    session = sessions.StringSession()
-    client = TelegramClient(session, api_id, api_hash)
-    
-    await client.connect()
-    if not await client.is_user_authorized():
-        try:
-            await client.send_code_request(phone)
-            print(f"تم إرسال رمز التحقق إلى {phone}")
-            
-            # انتظار إدخال رمز التحقق
-            code = input(f"أدخل رمز التحقق للحساب {phone}: ")
-            await client.sign_in(phone, code)
+        # إرسال الصورة المحسّنة
+        await bot.send_file(event.chat_id, output_image_path, caption="✨ تم تحسين الصورة بنجاح!")
+    except Exception as e:
+        await event.reply(f"حدث خطأ أثناء تحسين الصورة: {str(e)}")
+    finally:
+        # تنظيف الملفات
+        if os.path.exists(input_image_path):
+            os.remove(input_image_path)
+        if os.path.exists(output_image_path):
+            os.remove(output_image_path)
 
-            if await client.is_user_authorized():
-                print(f"تم تسجيل الدخول بنجاح للحساب {phone}")
-        except SessionPasswordNeededError:
-            password = input(f"أدخل كلمة مرور المصادقة الثنائية للحساب {phone}: ")
-            await client.sign_in(password=password)
-    
-    accounts.append(client)
-    client.add_event_handler(lambda event, acc=phone: handle_self_destruct_message(client, event, acc), events.NewMessage(incoming=True))
-    await client.start()
-    print(f"الحساب {phone} يعمل الآن.")
-
-# تشغيل البوت
-@bot.on(events.NewMessage(pattern='/add_account'))
-async def add_account(event):
-    await event.respond("أرسل المعلومات بالشكل التالي: API_ID|API_HASH|PHONE")
-
-@bot.on(events.NewMessage)
-async def handle_new_account(event):
-    if '|' in event.raw_text:
-        try:
-            api_id, api_hash, phone = event.raw_text.split('|')
-            await start_account(int(api_id), api_hash, phone, f"session_{phone}")
-            await event.respond(f"تمت إضافة الحساب {phone} بنجاح!")
-        except Exception as e:
-            await event.respond(f"حدث خطأ أثناء إضافة الحساب: {str(e)}")
-    else:
-        await event.respond("صيغة غير صحيحة. يرجى المحاولة مرة أخرى.")
-
-# تشغيل البوت وجميع الحسابات
+# بدء تشغيل البوت
 async def main():
+    print("Downloading weights if not already downloaded...")
+    download_weights()
+
+    print("Starting bot...")
     await bot.start(bot_token=BOT_TOKEN)
-    print("البوت قيد التشغيل... أرسل /add_account لإضافة حساب جديد.")
+    print("Bot is running...")
     await bot.run_until_disconnected()
 
-asyncio.run(main())
-        
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
