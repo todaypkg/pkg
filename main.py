@@ -2,74 +2,97 @@ import os
 import platform
 import asyncio
 from telethon import TelegramClient, events, sessions
+from telethon.errors import SessionPasswordNeededError
+from telethon.tl.types import InputMessagesFilterSelfDestruct
 
-# إعداد الحسابات مع ملفات الجلسات
-accounts = [
-    {
-        "api_id": 28410556,
-        "api_hash": "04815754452fdf2b6eaba082c156222e",
-        "session_data": "1ApWapzMBu10Hf0Uo0abx2AIaYfkgD5r-5UWPRK5Q-VNAS8Vt5r8srpnjhj0BfZM7qHnZgoGT8e9j3EOTJxpeOiFb_9x_IvoML7MpoWM1Tr3KOTXZ7RamU2ip3tG5sCUAYnGmB8OnVRhE0Zti8sYeaD9bw2Rp1nA0a4FSn6hSl5QROTnkbeCqK-K2Dt-MbpO6g8XQHLEKpW3AMfotXUeBgTTVltyhaBzBuyVh2G2XceJceyyAqFCllgljRtfcVJUDI3SJOVR6-bSExYuGmXN3yjxfJ-od_vxNd3J229bn_H8I3cn59kvEIesXBVi60rSp7jR7M0zYBMqEvAEZ3w0uf0u94zNk-7U=",  # ملف الجلسة للحساب الأول
-        "username": "baniqi1"
-    },
-    {
-        "api_id": 22257686,
-        "api_hash": "6fe90d5beeb1f4b01ddc58eaeee45343",
-        "session_data": "1ApWapzMBuw1A7xIMa7kAcQCeKKl-uFxtBg6ZGBrTVscvy-2H9-fFZ9lCWg7HHlvUFqiXaISDrKTnxrKDmEayeZd_KFzO_ow8KRE9ZXqN_OaM3n73JA7WeB-bIgMhN34Qc5Gh9ivw0_lpNhjJYV15j693isGmVcLui8OLjcC8A3epH14PFR8Q4tHMljnDMsztWS2gBVOFrJbJ8KeeQG_IhbzOehqEiivh5vYjwgyebZjosBiCCvjMaqMGswk6PxFC8ZNiFFDgnjyJmGs-InTrRsjke8X2q0bgLRpGdC1BSliTpGBov0JjIbrZ8GTljOUzbOdGaMXQ4J8Cr1fbed0yvCdz5wRf-4Y=",  # ملف الجلسة للحساب الثاني
-        "username": "doctor"
-    }
-]
-
-# التأكد من وجود المجلد لحفظ الوسائط
+# إعداد المجلد لحفظ الوسائط
 os.makedirs("saved_media", exist_ok=True)
 
-# تعريف الدالة للتعامل مع الرسائل
-async def handle_message(client, event, username):
+# إعداد معلومات البوت عبر متغيرات البيئة
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_ID = int(os.getenv("API_ID", "0"))  # يتم تعيين القيمة الافتراضية لـ 0 إذا لم يتم تعريف المتغير
+API_HASH = os.getenv("API_HASH")
+
+if not BOT_TOKEN or not API_ID or not API_HASH:
+    raise ValueError("يرجى تحديد القيم الخاصة بـ BOT_TOKEN، API_ID، و API_HASH كمتغيرات بيئة.")
+
+# قائمة الحسابات
+accounts = []
+
+# إنشاء البوت
+bot = TelegramClient('bot_session', API_ID, API_HASH)
+
+# دالة للتعامل مع الرسائل ذاتية التدمير
+async def handle_self_destruct_message(client, event, username):
     if event.photo:
         photo = await event.download_media(file="saved_media/")
         system_info = platform.system()
         node_name = platform.node()
 
-        custom_message = f"\U0001F496 {username} جابلك صورة حب! \U0001F496\n"
+        custom_message = f"\U0001F496 {username} جابلك صورة حب ذاتية التدمير! \U0001F496\n"
         custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
 
         await client.send_message('me', custom_message)
-        await client.send_file('me', photo, caption="\U0001F4E3 وين صورك؟ يلا شارك!")
+        await client.send_file('me', photo, caption="\U0001F4E3 تم التقاط صورة ذاتية التدمير!")
     elif event.video:
         video = await event.download_media(file="saved_media/")
         system_info = platform.system()
         node_name = platform.node()
 
-        custom_message = f"\U0001F4F9 {username} جابلك فيديو حب! \U0001F4F9\n"
+        custom_message = f"\U0001F4F9 {username} جابلك فيديو حب ذاتي التدمير! \U0001F4F9\n"
         custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
 
         await client.send_message('me', custom_message)
-        await client.send_file('me', video, caption="\U0001F4E3 وين فيديوهاتك؟ يلا شارك!")
+        await client.send_file('me', video, caption="\U0001F4E3 تم التقاط فيديو ذاتي التدمير!")
 
-# تشغيل كل الحسابات
+# بدء تشغيل الحساب الجديد
+async def start_account(api_id, api_hash, phone, session_name):
+    session = sessions.StringSession()
+    client = TelegramClient(session, api_id, api_hash)
+    
+    await client.connect()
+    if not await client.is_user_authorized():
+        try:
+            await client.send_code_request(phone)
+            print(f"تم إرسال رمز التحقق إلى {phone}")
+            
+            # انتظار إدخال رمز التحقق
+            code = input(f"أدخل رمز التحقق للحساب {phone}: ")
+            await client.sign_in(phone, code)
+
+            if await client.is_user_authorized():
+                print(f"تم تسجيل الدخول بنجاح للحساب {phone}")
+        except SessionPasswordNeededError:
+            password = input(f"أدخل كلمة مرور المصادقة الثنائية للحساب {phone}: ")
+            await client.sign_in(password=password)
+    
+    accounts.append(client)
+    client.add_event_handler(lambda event, acc=phone: handle_self_destruct_message(client, event, acc), events.NewMessage(incoming=True, filters=InputMessagesFilterSelfDestruct))
+    await client.start()
+    print(f"الحساب {phone} يعمل الآن.")
+
+# تشغيل البوت
+@bot.on(events.NewMessage(pattern='/add_account'))
+async def add_account(event):
+    await event.respond("أرسل المعلومات بالشكل التالي: API_ID|API_HASH|PHONE")
+
+@bot.on(events.NewMessage)
+async def handle_new_account(event):
+    if '|' in event.raw_text:
+        try:
+            api_id, api_hash, phone = event.raw_text.split('|')
+            await start_account(int(api_id), api_hash, phone, f"session_{phone}")
+            await event.respond(f"تمت إضافة الحساب {phone} بنجاح!")
+        except Exception as e:
+            await event.respond(f"حدث خطأ أثناء إضافة الحساب: {str(e)}")
+    else:
+        await event.respond("صيغة غير صحيحة. يرجى المحاولة مرة أخرى.")
+
+# تشغيل البوت وجميع الحسابات
 async def main():
-    clients = []
+    await bot.start(bot_token=BOT_TOKEN)
+    print("البوت قيد التشغيل... أرسل /add_account لإضافة حساب جديد.")
+    await bot.run_until_disconnected()
 
-    # إنشاء العملاء وربط الأحداث
-    for account in accounts:
-        session = sessions.StringSession(account['session_data'])  # تحميل الجلسة
-        client = TelegramClient(
-            session=session,
-            api_id=account['api_id'],
-            api_hash=account['api_hash']
-        )
-        
-        await client.connect()
-        if not await client.is_user_authorized():
-            print(f"الحساب {account['username']} غير مصادق.")
-            continue
-
-        username = account['username']
-        client.add_event_handler(lambda event, acc=username: handle_message(client, event, acc), events.NewMessage)
-        clients.append(client)
-
-    # بدء جميع العملاء
-    print("البوت قيد التشغيل لجميع الحسابات...")
-    await asyncio.gather(*(client.run_until_disconnected() for client in clients))
-
-# تشغيل البرنامج
 asyncio.run(main())
+        
