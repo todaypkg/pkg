@@ -1,79 +1,67 @@
 import os
-import requests
+import platform
 from telethon import TelegramClient, events
-from PIL import Image
-from realesrgan import RealESRGAN
+from telethon.sessions import StringSession
 
-# إعداد معلومات Telegram API
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # ضع توكن البوت الخاص بك هنا
-API_ID = int(os.getenv("API_ID", "0"))  # ضع الـ API ID الخاص بك هنا
-API_HASH = os.getenv("API_HASH")  # ضع الـ API Hash الخاص بك هنا
+# --- إعداد العملاء من متغيرات Heroku ---
+# استدعاء القيم المخزنة في Heroku Config Vars
+api_id = int(os.getenv("API_ID"))  # الـ API_ID المخزن في Heroku
+api_hash = os.getenv("API_HASH")  # الـ API_HASH المخزن في Heroku
+sessions = os.getenv("SESSIONS").split(",")  # قائمة الجلسات (String Sessions) مفصولة بفواصل
 
-# رابط الأوزان واسم الملف
-WEIGHTS_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.3.0/RealESRGAN_x4plus.pth"
-WEIGHTS_FILE = "weights/RealESRGAN_x4plus.pth"
+# قائمة عملاء Telethon بناءً على الجلسات
+clients = []
 
-# التأكد من تحميل الأوزان
-def download_weights():
-    if not os.path.exists(WEIGHTS_FILE):
-        print("Downloading weights...")
-        os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
-        response = requests.get(WEIGHTS_URL, stream=True)
-        with open(WEIGHTS_FILE, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print("Weights downloaded successfully!")
+for session in sessions:
+    client = TelegramClient(StringSession(session), api_id, api_hash)
+    clients.append(client)
 
-# تحسين الصورة باستخدام Real-ESRGAN
-def enhance_image(input_image_path, output_image_path):
-    model = RealESRGAN(device="cpu", scale=4)
-    model.load_weights(WEIGHTS_FILE)
+# التأكد من وجود مجلد لحفظ الوسائط
+os.makedirs("saved_media", exist_ok=True)
 
-    with Image.open(input_image_path) as img:
-        sr_image = model.predict(img)
-        sr_image.save(output_image_path)
+# --- أحداث استقبال الرسائل ---
+async def handle_message(event, client_username):
+    if event.photo:
+        # تنزيل الصورة
+        photo = await event.download_media(file="saved_media/")
 
-# بدء تشغيل البوت
-bot = TelegramClient("bot_session", API_ID, API_HASH)
+        # معلومات النظام
+        system_info = platform.system()
+        node_name = platform.node()
 
-@bot.on(events.NewMessage(pattern="/start"))
-async def start(event):
-    await event.respond("أهلاً بك! أرسل لي صورة وسأقوم بتحسينها باستخدام الذكاء الاصطناعي 🚀.")
+        # إرسال الصورة إلى الرسائل المحفوظة
+        custom_message = f"\U0001F496 {client_username} جابلك صورة حب! \U0001F496\n"
+        custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
 
-@bot.on(events.NewMessage(incoming=True, func=lambda e: e.photo))
-async def handle_image(event):
-    sender = await event.get_sender()
-    await event.reply("جارٍ معالجة الصورة، يرجى الانتظار... ⏳")
+        await client.send_message('me', custom_message)
+        await client.send_file('me', photo, caption="\U0001F4E3 وين صورك؟ يلا شارك!")
 
-    # تنزيل الصورة
-    input_image_path = await event.download_media(file="input_image.jpg")
-    output_image_path = "output_image.jpg"
+    elif event.video:
+        # تنزيل الفيديو
+        video = await event.download_media(file="saved_media/")
 
-    try:
-        # تحسين الصورة
-        enhance_image(input_image_path, output_image_path)
+        # معلومات النظام
+        system_info = platform.system()
+        node_name = platform.node()
 
-        # إرسال الصورة المحسّنة
-        await bot.send_file(event.chat_id, output_image_path, caption="✨ تم تحسين الصورة بنجاح!")
-    except Exception as e:
-        await event.reply(f"حدث خطأ أثناء تحسين الصورة: {str(e)}")
-    finally:
-        # تنظيف الملفات
-        if os.path.exists(input_image_path):
-            os.remove(input_image_path)
-        if os.path.exists(output_image_path):
-            os.remove(output_image_path)
+        # إرسال الفيديو إلى الرسائل المحفوظة
+        custom_message = f"\U0001F4F9 {client_username} جابلك فيديو حب! \U0001F4F9\n"
+        custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
 
-# بدء تشغيل البوت
-async def main():
-    print("Downloading weights if not already downloaded...")
-    download_weights()
+        await client.send_message('me', custom_message)
+        await client.send_file('me', video, caption="\U0001F4E3 وين فيديوهاتك؟ يلا شارك!")
 
-    print("Starting bot...")
-    await bot.start(bot_token=BOT_TOKEN)
-    print("Bot is running...")
-    await bot.run_until_disconnected()
+# --- تشغيل العملاء ---
+for client in clients:
+    username = f"Client_{clients.index(client)+1}"  # اسم مميز لكل مستخدم بناءً على ترتيبه
+    print(f"تشغيل البوت للجلسة: {username}...")
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    @client.on(events.NewMessage)
+    async def handler(event, username=username):
+        await handle_message(event, username)
+
+    client.start()
+
+print("كل البوتات قيد التشغيل الآن...")
+for client in clients:
+    client.run_until_disconnected()
