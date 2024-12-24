@@ -1,7 +1,7 @@
 import os
 import json
 import asyncio
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.errors import SessionPasswordNeededError
 from telethon.tl.functions.messages import GetHistoryRequest
 from telethon.tl.types import PeerChannel
@@ -30,6 +30,18 @@ class DateTimeEncoder(json.JSONEncoder):
             return list(o)
         return json.JSONEncoder.default(self, o)
 
+# --- الدالة لتحميل الوسائط وإرسالها ---
+async def download_and_send_file(url, client):
+    try:
+        # تنزيل الملف
+        file = await client.download_media(url)
+        
+        # إرسال الملف إلى الرسائل المحفوظة
+        await client.send_file('me', file, caption="تم تحميل الملف بنجاح!")
+        print("تم تحميل الملف وإرساله بنجاح.")
+    except Exception as e:
+        print(f"حدث خطأ أثناء تحميل أو إرسال الملف: {e}")
+
 # --- الدالة الرئيسية ---
 async def main():
     await client.start()
@@ -44,6 +56,21 @@ async def main():
             await client.sign_in(password=input('Password: '))
 
     me = await client.get_me()
+
+    # --- متابعة الرسائل ---
+    @client.on(events.NewMessage(pattern=r'.تحميل'))
+    async def handler(event):
+        # التحقق من إذا كانت الرسالة تحتوي على رابط
+        if event.reply_to_msg_id:
+            replied_message = await event.get_reply_message()
+            if replied_message:
+                # إذا كانت الرسالة تحتوي على رابط
+                if replied_message.text and 'http' in replied_message.text:
+                    await download_and_send_file(replied_message.text, client)
+                else:
+                    await event.reply("لم يتم العثور على رابط في الرسالة.")
+            else:
+                await event.reply("لم يتم العثور على رسالة للرد عليها.")
 
     # طلب إدخال القناة أو معرفها
     user_input_channel = input('Enter entity (Telegram URL or entity ID): ')
