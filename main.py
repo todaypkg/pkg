@@ -11,6 +11,7 @@ from telethon.sessions import StringSession
 # إعداد القيم من البيئة
 api_id = int(os.getenv("API_ID"))  # API_ID من المتغيرات البيئية
 api_hash = os.getenv("API_HASH")  # API_HASH من المتغيرات البيئية
+phone = os.getenv("PHONE")  # رقم الهاتف من المتغيرات البيئية
 session_string = os.getenv("SESSION_STRING")  # الجلسة المخزنة كـ StringSession من المتغيرات البيئية
 
 # إنشاء الجلسة مع Telethon
