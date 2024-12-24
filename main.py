@@ -1,67 +1,101 @@
 import os
-import platform
-from telethon import TelegramClient, events
+import json
+import asyncio
+from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError
+from telethon.tl.functions.messages import GetHistoryRequest
+from telethon.tl.types import PeerChannel
+from datetime import datetime
 from telethon.sessions import StringSession
 
-# --- إعداد العملاء من متغيرات Heroku ---
-# استدعاء القيم المخزنة في Heroku Config Vars
-api_id = int(os.getenv("API_ID"))  # الـ API_ID المخزن في Heroku
-api_hash = os.getenv("API_HASH")  # الـ API_HASH المخزن في Heroku
-sessions = os.getenv("SESSIONS").split(",")  # قائمة الجلسات (String Sessions) مفصولة بفواصل
+# --- إعداد القيم من البيئة ---
+api_id = int(os.getenv("API_ID"))  # API_ID من المتغيرات البيئية
+api_hash = os.getenv("API_HASH")  # API_HASH من المتغيرات البيئية
+phone = os.getenv("PHONE")  # رقم الهاتف من المتغيرات البيئية
+username = os.getenv("USERNAME")  # اسم المستخدم للجلسة من المتغيرات البيئية
+session_string = os.getenv("SESSION_STRING")  # الجلسة المخزنة كـ StringSession من المتغيرات البيئية
 
-# قائمة عملاء Telethon بناءً على الجلسات
-clients = []
+# --- إنشاء الجلسة مع Telethon ---
+if session_string:
+    client = TelegramClient(StringSession(session_string), api_id, api_hash)
+else:
+    client = TelegramClient(username, api_id, api_hash)
 
-for session in sessions:
-    client = TelegramClient(StringSession(session), api_id, api_hash)
-    clients.append(client)
+# --- الكود لتحويل التاريخ إلى صيغة يمكن تخزينها ---
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, datetime):
+            return o.isoformat()
+        if isinstance(o, bytes):
+            return list(o)
+        return json.JSONEncoder.default(self, o)
 
-# التأكد من وجود مجلد لحفظ الوسائط
-os.makedirs("saved_media", exist_ok=True)
+# --- الدالة الرئيسية ---
+async def main():
+    await client.start()
+    print("Client Created")
+    
+    # التحقق من تسجيل الدخول
+    if not await client.is_user_authorized():
+        await client.send_code_request(phone)
+        try:
+            await client.sign_in(phone, input('Enter the code: '))
+        except SessionPasswordNeededError:
+            await client.sign_in(password=input('Password: '))
 
-# --- أحداث استقبال الرسائل ---
-async def handle_message(event, client_username):
-    if event.photo:
-        # تنزيل الصورة
-        photo = await event.download_media(file="saved_media/")
+    me = await client.get_me()
 
-        # معلومات النظام
-        system_info = platform.system()
-        node_name = platform.node()
+    # طلب إدخال القناة أو معرفها
+    user_input_channel = input('Enter entity (Telegram URL or entity ID): ')
+    
+    # التحقق من إدخال URL أو ID
+    if user_input_channel.isdigit():
+        entity = PeerChannel(int(user_input_channel))
+    else:
+        entity = user_input_channel
 
-        # إرسال الصورة إلى الرسائل المحفوظة
-        custom_message = f"\U0001F496 {client_username} جابلك صورة حب! \U0001F496\n"
-        custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
+    my_channel = await client.get_entity(entity)
 
-        await client.send_message('me', custom_message)
-        await client.send_file('me', photo, caption="\U0001F4E3 وين صورك؟ يلا شارك!")
+    offset_id = 0
+    limit = 100
+    all_messages = []
+    total_messages = 0
+    total_count_limit = 0
 
-    elif event.video:
-        # تنزيل الفيديو
-        video = await event.download_media(file="saved_media/")
+    while True:
+        print(f"Current Offset ID is: {offset_id}; Total Messages: {total_messages}")
+        
+        # الحصول على الرسائل من القناة
+        history = await client(GetHistoryRequest(
+            peer=my_channel,
+            offset_id=offset_id,
+            offset_date=None,
+            add_offset=0,
+            limit=limit,
+            max_id=0,
+            min_id=0,
+            hash=0
+        ))
+        
+        if not history.messages:
+            break
+        
+        messages = history.messages
+        for message in messages:
+            all_messages.append(message.to_dict())
+        
+        offset_id = messages[-1].id
+        total_messages = len(all_messages)
+        
+        if total_count_limit != 0 and total_messages >= total_count_limit:
+            break
 
-        # معلومات النظام
-        system_info = platform.system()
-        node_name = platform.node()
+    # حفظ الرسائل في ملف JSON
+    with open('channel_messages.json', 'w') as outfile:
+        json.dump(all_messages, outfile, cls=DateTimeEncoder)
 
-        # إرسال الفيديو إلى الرسائل المحفوظة
-        custom_message = f"\U0001F4F9 {client_username} جابلك فيديو حب! \U0001F4F9\n"
-        custom_message += f"\u2728 الجهاز: {node_name}\n\u2728 النظام: {system_info}"
+    print("Finished saving messages.")
 
-        await client.send_message('me', custom_message)
-        await client.send_file('me', video, caption="\U0001F4E3 وين فيديوهاتك؟ يلا شارك!")
-
-# --- تشغيل العملاء ---
-for client in clients:
-    username = f"Client_{clients.index(client)+1}"  # اسم مميز لكل مستخدم بناءً على ترتيبه
-    print(f"تشغيل البوت للجلسة: {username}...")
-
-    @client.on(events.NewMessage)
-    async def handler(event, username=username):
-        await handle_message(event, username)
-
-    client.start()
-
-print("كل البوتات قيد التشغيل الآن...")
-for client in clients:
-    client.run_until_disconnected()
+# --- بدء الجلسة وتشغيل الكود ---
+if __name__ == "__main__":
+    client.loop.run_until_complete(main())
