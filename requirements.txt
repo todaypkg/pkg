@@ -5,3 +5,5 @@ selenium
 chromedriver-autoinstaller
 python-telegram-bot==20.3
 moviepy==1.0.3
+python-telegram-bot[webhooks]==20.3
+moviepy==1.0.3
