@@ -1,82 +1,62 @@
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from moviepy.editor import VideoFileClip
 import os
-from telethon import TelegramClient, events
-import re
 
-# إعداد المتغيرات
-api_id = int(os.getenv("API_ID"))  # استبدل بـ API_ID الخاص بك
-api_hash = os.getenv("API_HASH")  # استبدل بـ API_HASH الخاص بك
-session_string = os.getenv("SESSION_STRING")  # SESSION_STRING من المتغيرات البيئية
+# جلب التوكن من متغيرات البيئة
+TOKEN = os.environ.get("BOT_TOKEN")
 
-# استخدام الجلسة المخزنة
-client = TelegramClient.from_string(session_string, api_id, api_hash)
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("مرحباً! أرسل لي فيديو وسأستخرج الصوت وأعيده لك كملف صوتي.")
 
-# متغير لتفعيل الحفظ التلقائي
-is_active = False
+def handle_video(update: Update, context: CallbackContext):
+    # تحميل الفيديو الذي أرسله المستخدم
+    video_file = update.message.video or update.message.document
+    if video_file:
+        video_path = video_file.get_file().download()
+        audio_path = f"{os.path.splitext(video_path)[0]}.mp3"
 
-@client.on(events.NewMessage(pattern=".تشغيل الحفظ"))
-async def enable_auto_save(event):
-    """
-    تفعيل خاصية الحفظ التلقائي.
-    """
-    global is_active
-    is_active = True
-    await event.reply("✅ تم تشغيل الحفظ التلقائي.")
+        try:
+            # استخراج الصوت باستخدام moviepy
+            video = VideoFileClip(video_path)
+            video.audio.write_audiofile(audio_path)
 
-@client.on(events.NewMessage(pattern=".إيقاف الحفظ"))
-async def disable_auto_save(event):
-    """
-    إيقاف خاصية الحفظ التلقائي.
-    """
-    global is_active
-    is_active = False
-    await event.reply("❌ تم إيقاف الحفظ التلقائي.")
+            # إرسال الملف الصوتي للمستخدم
+            with open(audio_path, "rb") as audio_file:
+                update.message.reply_audio(audio_file)
 
-@client.on(events.NewMessage(pattern=r".تحميل (.+)"))
-async def download_message_by_link(event):
-    """
-    تحميل الرسائل عبر رابط مرفق في الرسالة.
-    """
-    if not is_active:
-        await event.reply("❌ يجب تشغيل الحفظ التلقائي أولاً باستخدام .تشغيل الحفظ")
-        return
-    
-    url = event.pattern_match.group(1)
-    
-    try:
-        # محاولة استخراج الرسالة من الرابط المرفق
-        match = re.search(r't.me/(\w+)/(\d+)', url)
-        if match:
-            username = match.group(1)
-            message_id = int(match.group(2))
-            
-            # الحصول على الكيان (القناة أو المجموعة)
-            entity = await client.get_entity(username)
-            
-            # جلب الرسالة باستخدام الـ message_id
-            message = await client.get_messages(entity, ids=message_id)
-            
-            # التحقق من نوع الرسالة
-            if message.text:  # إذا كانت الرسالة نصية
-                await client.send_message("me", f"📩 نص الرسالة: {message.text}")
-            elif message.media:  # إذا كانت الرسالة تحتوي على وسائط
-                file_path = await message.download_media()
-                await client.send_message("me", f"📂 تم تحميل الوسائط: {file_path}")
-            elif message.poll:  # إذا كانت الرسالة تحتوي على استفتاء
-                await client.send_message("me", f"📝 تم استخراج التصويت: {message.poll}")
-            else:
-                await client.send_message("me", "📦 تم استخراج رسالة غير معروفة المحتوى.")
-            
-            await event.reply("✅ تم تحميل الرسالة بنجاح.")
-        else:
-            await event.reply("❌ الرابط غير صالح. تأكد من أنه رابط صالح لرسالة في تيليغرام.")
-    except Exception as e:
-        await event.reply(f"❌ حدث خطأ أثناء تحميل الرسالة: {e}")
+        except Exception as e:
+            update.message.reply_text(f"حدث خطأ أثناء معالجة الفيديو: {e}")
 
-# بدء الجلسة
-async def main():
-    await client.start()
-    print("✅ تم تسجيل الدخول بنجاح.")
-    await client.run_until_disconnected()
+        finally:
+            # تنظيف الملفات المؤقتة
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+    else:
+        update.message.reply_text("يرجى إرسال فيديو صالح.")
 
-with client:
-    client.loop.run_until_complete(main())
+def main():
+    PORT = int(os.environ.get('PORT', 8443))
+    APP_NAME = "pkg56"
+
+    updater = Updater(TOKEN)
+    dp = updater.dispatcher
+
+    # إضافة المعالجات
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.video | Filters.document.mime_type("video/mp4"), handle_video))
+
+    # إعداد Webhook
+    updater.start_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN,
+        webhook_url=f"https://{APP_NAME}.herokuapp.com/{TOKEN}"
+    )
+
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
