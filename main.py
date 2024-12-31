@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, filters
 from moviepy.editor import VideoFileClip
 import os
 
@@ -46,7 +46,7 @@ def main():
 
     # إضافة المعالجات
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.video | Filters.document.mime_type("video/mp4"), handle_video))
+    dp.add_handler(MessageHandler(filters.VIDEO | filters.Document.MimeType("video/mp4"), handle_video))
 
     # إعداد Webhook
     updater.start_webhook(
