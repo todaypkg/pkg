@@ -1,9 +1,4 @@
-telethon==1.24.0
-aiohttp==3.8.1
-python-dotenv==0.19.2
-selenium
-chromedriver-autoinstaller
-python-telegram-bot==20.3
-moviepy==1.0.3
-python-telegram-bot[webhooks]==20.3
-moviepy==1.0.3
+telethon
+   pymupdf
+   python-pptx
+   python-docx
